@@ -29,9 +29,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.medusko.velocast.BuildConfig
 import com.medusko.velocast.R
-import com.medusko.velocast.model.CameraFeedOption
-import com.medusko.velocast.model.MappingOption
-import com.medusko.velocast.model.WeatherApiOption
+import com.medusko.velocast.model.*
 import com.medusko.velocast.ui.theme.TailwindGreen
 
 @Composable
@@ -39,9 +37,11 @@ fun AboutVelocastDialog(
     mappingOption: MappingOption,
     weatherApiOption: WeatherApiOption,
     cameraFeedOption: CameraFeedOption,
+    distanceUnit: DistanceUnit,
     onDismiss: () -> Unit
 ) {
     val uriHandler = LocalUriHandler.current
+    val resSpan = CyclingMath.formatResolutionSpan(distanceUnit)
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -210,7 +210,7 @@ fun AboutVelocastDialog(
                                             .background(TailwindGreen)
                                     )
                                     Text(
-                                        text = weatherApiOption.title.substringBefore(" ("),
+                                        text = weatherApiOption.localizedTitle(distanceUnit).substringBefore(" ("),
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = TailwindGreen
@@ -234,7 +234,7 @@ fun AboutVelocastDialog(
                         }
                     }
 
-                    // 2. ARCHITECTURE & MICROCLIMATE ENGINE
+                    // 2. ARCHITECTURE & MICROCLIMATE ENGINE (Dynamic mi / km resolution!)
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
                             text = "ROUTE-AHEAD CYCLING METEOROLOGY",
@@ -244,14 +244,13 @@ fun AboutVelocastDialog(
                             letterSpacing = 0.8.sp
                         )
                         Text(
-                            text = "Velocast predicts weather, wind vectors, UV exposure, rain probability, and sunrise/sunset where you are riding to—not just where you start.\n\nBy combining 1–3km regional numerical weather models with physical station telemetry and time-interpolated route waypoints, cyclists can plan around headwinds, coastal fog, and mountain pass storms.",
+                            text = "Velocast predicts weather, wind vectors, UV exposure, rain probability, and sunrise/sunset where you are riding to—not just where you start.\n\nBy combining $resSpan regional numerical weather models with physical station telemetry and time-interpolated route waypoints, cyclists can plan around headwinds, coastal fog, and mountain pass storms.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface,
                             lineHeight = 17.sp
                         )
                     }
 
-                    // Feature highlights
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
@@ -264,20 +263,20 @@ fun AboutVelocastDialog(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             AboutFeatureItem(
-                                title = "Dual Free Mapping Engines",
-                                description = "Switch seamlessly between OpenFreeMap (MapLibre vector Liberty tiles) and OSMDroid (OpenStreetMap raster tiles)."
+                                title = "Dual Mapping Engines & 3 Layer Styles",
+                                description = "Switch between OpenFreeMap and OSMDroid with Regular, Street, and Topograph map layers."
                             )
                             AboutFeatureItem(
                                 title = "4 Selectable Weather & Station Providers",
-                                description = "Open-Meteo (default 1-3km HRRR/ICON grids), NOAA / NWS physical observation stations, WeatherAPI.com, and OpenWeatherMap."
+                                description = "Open-Meteo ($resSpan HRRR/ICON grids), NOAA / NWS physical observation stations, WeatherAPI.com, and OpenWeatherMap."
                             )
                             AboutFeatureItem(
-                                title = "5-Point Route Cast & Wind Vector Math",
+                                title = "20-Point Route Cast & Wind Vector Math",
                                 description = "Calculates rider bearing vs. wind direction at your estimated arrival time per waypoint to classify Headwind, Tailwind, or Crosswind."
                             )
                             AboutFeatureItem(
                                 title = "Public Roadside & Pass Camera Feeds",
-                                description = "Switch between Windy Webcams (default) and State/Regional DOT 511 highway cameras to inspect live road conditions."
+                                description = "Switch between Windy Webcams and State/Regional DOT 511 highway cameras with direct stream URLs."
                             )
                         }
                     }
@@ -296,16 +295,16 @@ fun AboutVelocastDialog(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            AboutResourceLink(text = "Changelog ↗", modifier = Modifier.weight(1f)) {
+                            AboutResourceLink(text = "Changelog", modifier = Modifier.weight(1f)) {
                                 uriHandler.openUri("https://github.com/medusko/Velocast/blob/main/CHANGELOG.md")
                             }
-                            AboutResourceLink(text = "Releases ↗", modifier = Modifier.weight(1f)) {
+                            AboutResourceLink(text = "Releases", modifier = Modifier.weight(1f)) {
                                 uriHandler.openUri("https://github.com/medusko/Velocast/releases")
                             }
-                            AboutResourceLink(text = "Source ↗", modifier = Modifier.weight(1f)) {
+                            AboutResourceLink(text = "Source", modifier = Modifier.weight(1f)) {
                                 uriHandler.openUri("https://github.com/medusko/Velocast")
                             }
-                            AboutResourceLink(text = "Sponsor ☕ ↗", modifier = Modifier.weight(1.1f)) {
+                            AboutResourceLink(text = "Sponsor", modifier = Modifier.weight(1f)) {
                                 uriHandler.openUri("https://github.com/sponsors/Zlatty")
                             }
                         }

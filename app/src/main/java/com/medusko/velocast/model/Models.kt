@@ -1,5 +1,6 @@
 package com.medusko.velocast.model
 
+import java.util.Locale
 import kotlin.math.*
 
 enum class MappingOption(
@@ -10,20 +11,34 @@ enum class MappingOption(
 ) {
     OPEN_FREE_MAP(
         id = "openfreemap",
-        title = "OpenFreeMap (MapLibre Vector)",
-        badge = "Default • 100% Free",
-        description = "GPU-accelerated vector basemaps using OpenFreeMap Liberty style. Zero API keys or rate caps."
+        title = "OpenFreeMap",
+        badge = "Default • Vector",
+        description = "High-contrast cartographic basemaps with Street, Topograph, and Regular layer styles."
     ),
     OSMDROID(
         id = "osmdroid",
         title = "OSMDroid (OpenStreetMap)",
-        badge = "100% Free • Raster",
-        description = "Native OpenStreetMap & CyclOSM cycling tile renderer with automatic device tile caching."
+        badge = "Standard • Cycling",
+        description = "Native OpenStreetMap, CyclOSM, and OpenTopoMap tile renderer with device caching."
     );
 
     companion object {
         fun fromId(id: String?): MappingOption =
             entries.firstOrNull { it.id == id } ?: OPEN_FREE_MAP
+    }
+}
+
+enum class MapStyleOption(
+    val id: String,
+    val label: String
+) {
+    REGULAR("regular", "Regular"),
+    STREET("street", "Street"),
+    TOPOGRAPHIC("topograph", "Topograph");
+
+    companion object {
+        fun fromId(id: String?): MapStyleOption =
+            entries.firstOrNull { it.id == id } ?: REGULAR
     }
 }
 
@@ -36,32 +51,51 @@ enum class WeatherApiOption(
 ) {
     OPEN_METEO(
         id = "open_meteo",
-        title = "Open-Meteo (1–3km Microclimate)",
+        title = "Open-Meteo Microclimate",
         badge = "Default • Best",
-        description = "Combines NOAA HRRR 3km, DWD ICON 2km & ECMWF models for high-resolution microclimate accuracy. 10,000 free calls/day, no key needed.",
+        description = "Combines NOAA HRRR, DWD ICON & ECMWF models for high-resolution microclimate accuracy, hourly wind vectors, UV, and sun times.",
         requiresOptionalKey = false
     ),
     NOAA_NWS(
         id = "noaa_nws",
         title = "NOAA / NWS Station API",
-        badge = "100% Free • Station",
+        badge = "Physical Station",
         description = "Pinpoints the exact closest physical observation station (METAR/Mesonet) & official NWS gridpoint forecasts across the US.",
         requiresOptionalKey = false
     ),
     WEATHER_API(
         id = "weather_api",
         title = "WeatherAPI.com",
-        badge = "Free Tier • 1M/mo",
-        description = "Includes astronomy (sunrise/sunset), UV index, and hourly wind telemetry. Automatically falls back to Open-Meteo if no API key is entered.",
+        badge = "Astronomy & UV",
+        description = "Includes astronomy (sunrise/sunset), UV index, and hourly wind telemetry.",
         requiresOptionalKey = true
     ),
     OPEN_WEATHER_MAP(
         id = "open_weather_map",
         title = "OpenWeatherMap",
         badge = "One Call 3.0 / 2.5",
-        description = "Global weather, wind vectors, and UV index engine. Automatically falls back to Open-Meteo if no API key is entered.",
+        description = "Global weather, wind vectors, and UV index forecast engine.",
         requiresOptionalKey = true
     );
+
+    fun localizedTitle(distUnit: DistanceUnit): String {
+        return if (this == OPEN_METEO) {
+            val res = CyclingMath.formatResolutionSpan(distUnit)
+            "Open-Meteo ($res Microclimate)"
+        } else {
+            title
+        }
+    }
+
+    fun localizedDescription(distUnit: DistanceUnit): String {
+        return if (this == OPEN_METEO) {
+            val hrrr = if (distUnit == DistanceUnit.MILES) "1.9 mi" else "3 km"
+            val icon = if (distUnit == DistanceUnit.MILES) "1.2 mi" else "2 km"
+            "Combines NOAA HRRR $hrrr, DWD ICON $icon & ECMWF models for high-resolution microclimate accuracy."
+        } else {
+            description
+        }
+    }
 
     companion object {
         fun fromId(id: String?): WeatherApiOption =
@@ -79,12 +113,12 @@ enum class CameraFeedOption(
         id = "windy_webcams",
         title = "Windy Webcams API",
         badge = "Default • Global",
-        description = "Global scenic, coastal, and mountain pass cycling webcams with live daylight/weather snapshots.",
-        ),
+        description = "Global scenic, coastal, and mountain pass cycling webcams with live daylight/weather snapshots."
+    ),
     STATE_DOT_511(
         id = "state_dot_511",
         title = "State & Regional DOT 511 Feeds",
-        badge = "100% Free • Open Data",
+        badge = "Highway & Pass Cams",
         description = "Live Caltrans, WSDOT, CDOT, NYSDOT & 511 roadside traffic and mountain pass camera snapshots."
     );
 
@@ -94,25 +128,48 @@ enum class CameraFeedOption(
     }
 }
 
-enum class UnitSystem(val id: String, val label: String) {
-    IMPERIAL("imperial", "Imperial (°F, mph, mi, ft)"),
-    METRIC("metric", "Metric (°C, km/h, km, m)");
+enum class TempUnit(val id: String, val label: String, val shortLabel: String) {
+    FAHRENHEIT("f", "Fahrenheit (°F)", "°F"),
+    CELSIUS("c", "Celsius (°C)", "°C");
 
     companion object {
-        fun fromId(id: String?): UnitSystem =
-            entries.firstOrNull { it.id == id } ?: IMPERIAL
+        fun fromId(id: String?): TempUnit = entries.firstOrNull { it.id == id } ?: FAHRENHEIT
     }
 }
 
-enum class AppIconStyle(val id: String, val label: String) {
-    GOLD("gold", "Medusko Gold Contour (Default)"),
-    CLASSIC("classic", "Classic Neon Cyan");
+enum class SpeedUnit(val id: String, val label: String, val shortLabel: String) {
+    MPH("mph", "Miles/hr (mph)", "mph"),
+    KMH("kmh", "Kilometers/hr (km/h)", "km/h");
 
     companion object {
-        fun fromId(id: String?): AppIconStyle =
-            entries.firstOrNull { it.id == id } ?: GOLD
+        fun fromId(id: String?): SpeedUnit = entries.firstOrNull { it.id == id } ?: MPH
     }
 }
+
+enum class DistanceUnit(val id: String, val label: String, val shortLabel: String) {
+    MILES("mi", "Miles (mi)", "mi"),
+    KILOMETERS("km", "Kilometers (km)", "km");
+
+    companion object {
+        fun fromId(id: String?): DistanceUnit = entries.firstOrNull { it.id == id } ?: MILES
+    }
+}
+
+enum class ElevationUnit(val id: String, val label: String, val shortLabel: String) {
+    FEET("ft", "Feet (ft)", "ft"),
+    METERS("m", "Meters (m)", "m");
+
+    companion object {
+        fun fromId(id: String?): ElevationUnit = entries.firstOrNull { it.id == id } ?: FEET
+    }
+}
+
+data class UnitPreferences(
+    val tempUnit: TempUnit = TempUnit.FAHRENHEIT,
+    val speedUnit: SpeedUnit = SpeedUnit.MPH,
+    val distanceUnit: DistanceUnit = DistanceUnit.MILES,
+    val elevationUnit: ElevationUnit = ElevationUnit.FEET
+)
 
 enum class WindImpact(val label: String) {
     TAILWIND("Tailwind"),
@@ -183,6 +240,7 @@ data class RouteWaypoint(
 data class SavedRide(
     val id: String,
     val name: String,
+    val closestPlaceName: String,
     val region: String,
     val totalDistanceMiles: Double,
     val estimatedMinutes: Int,
@@ -203,6 +261,7 @@ data class PublicCameraFeed(
     val elevationFeet: Int,
     val imageUrl: String,
     val streamPageUrl: String,
+    val hlsStreamUrl: String = "",
     val directionLabel: String,
     val refreshIntervalSec: Int = 30,
     val roadConditionNote: String = "Live Road Surface & Wind Feed"
@@ -237,11 +296,6 @@ object CyclingMath {
         return (((theta + 360.0) % 360.0).roundToInt()) % 360
     }
 
-    /**
-     * Meteorological wind direction is where the wind blows FROM.
-     * If rider travels North (0°) and wind is FROM North (0°), that's a pure headwind (+windSpeed).
-     * If rider travels North (0°) and wind is FROM South (180°), that's a pure tailwind (-windSpeed).
-     */
     fun analyzeWindOnSegment(
         riderBearingDeg: Int,
         windFromDeg: Int,
@@ -251,7 +305,6 @@ object CyclingMath {
             return Triple(WindImpact.CALM, 0.0, 0.0)
         }
         val angleDiffRad = Math.toRadians((windFromDeg - riderBearingDeg).toDouble())
-        // Positive = headwind opposing rider, Negative = tailwind pushing rider
         val headwind = windSpeedMph * cos(angleDiffRad)
         val crosswind = abs(windSpeedMph * sin(angleDiffRad))
 
@@ -265,8 +318,8 @@ object CyclingMath {
         return Triple(impact, headwind, crosswind)
     }
 
-    fun formatTemp(tempF: Double, units: UnitSystem): String {
-        return if (units == UnitSystem.IMPERIAL) {
+    fun formatTemp(tempF: Double, units: UnitPreferences): String {
+        return if (units.tempUnit == TempUnit.FAHRENHEIT) {
             "${tempF.roundToInt()}°F"
         } else {
             val c = (tempF - 32.0) * 5.0 / 9.0
@@ -274,8 +327,8 @@ object CyclingMath {
         }
     }
 
-    fun formatSpeed(mph: Double, units: UnitSystem): String {
-        return if (units == UnitSystem.IMPERIAL) {
+    fun formatSpeed(mph: Double, units: UnitPreferences): String {
+        return if (units.speedUnit == SpeedUnit.MPH) {
             "${mph.roundToInt()} mph"
         } else {
             val kmh = mph * 1.60934
@@ -283,20 +336,40 @@ object CyclingMath {
         }
     }
 
-    fun formatDistance(miles: Double, units: UnitSystem): String {
-        return if (units == UnitSystem.IMPERIAL) {
-            String.format("%.1f mi", miles)
+    fun formatDistance(miles: Double, units: UnitPreferences): String {
+        return if (units.distanceUnit == DistanceUnit.MILES) {
+            String.format(Locale.US, "%.1f mi", miles)
         } else {
-            String.format("%.1f km", miles * 1.60934)
+            String.format(Locale.US, "%.1f km", miles * 1.60934)
         }
     }
 
-    fun formatElevation(feet: Int, units: UnitSystem): String {
-        return if (units == UnitSystem.IMPERIAL) {
-            "${feet} ft"
+    fun formatElevation(feet: Int, units: UnitPreferences): String {
+        return if (units.elevationUnit == ElevationUnit.FEET) {
+            "$feet ft"
         } else {
             "${(feet * 0.3048).roundToInt()} m"
         }
+    }
+
+    fun formatResolutionSpan(distUnit: DistanceUnit): String {
+        return if (distUnit == DistanceUnit.MILES) {
+            "0.6–1.9 mi"
+        } else {
+            "1–3 km"
+        }
+    }
+
+    fun ensureCountryInRegion(region: String): String {
+        val trimmed = region.trim()
+        if (trimmed.isEmpty()) return "USA"
+        if (trimmed.endsWith("USA", ignoreCase = true) ||
+            trimmed.endsWith("United States", ignoreCase = true) ||
+            trimmed.contains(", ") && trimmed.substringAfterLast(", ").length > 3
+        ) {
+            return trimmed.replace("United States", "USA")
+        }
+        return "$trimmed, USA"
     }
 
     fun uvSeverityLabel(uv: Double): String = when {

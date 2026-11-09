@@ -1,5 +1,9 @@
 package com.medusko.velocast.ui.components
 
+import android.annotation.SuppressLint
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -10,8 +14,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.PlayCircleOutline
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.*
@@ -25,14 +30,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.SubcomposeAsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.medusko.velocast.model.*
 import com.medusko.velocast.ui.theme.AccentBlue
 import com.medusko.velocast.ui.theme.MeduskoGold
@@ -40,21 +49,24 @@ import com.medusko.velocast.ui.theme.TailwindGreen
 import java.text.SimpleDateFormat
 import java.util.*
 
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun CameraFeedDialog(
     placeTitle: String,
     cameras: List<PublicCameraFeed>,
     activeSourceOption: CameraFeedOption,
     weather: WeatherSnapshot?,
-    units: UnitSystem,
+    units: UnitPreferences,
     initialSelectedCamera: PublicCameraFeed? = null,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     var selectedCamera by remember(cameras, initialSelectedCamera) {
         mutableStateOf(initialSelectedCamera ?: cameras.firstOrNull())
     }
     var refreshNonce by remember { mutableIntStateOf(0) }
+    var playInlineVideo by remember { mutableStateOf(false) }
     val timeFmt = remember { SimpleDateFormat("h:mm:ss a", Locale.US) }
     val timestampStr = remember(refreshNonce) { timeFmt.format(Date()) }
 
@@ -75,7 +87,6 @@ fun CameraFeedDialog(
                     .fillMaxSize()
                     .padding(16.dp)
             ) {
-                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -118,31 +129,58 @@ fun CameraFeedDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Active Camera Feed Preview Viewport
                 selectedCamera?.let { cam ->
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(215.dp),
+                            .height(225.dp),
                         shape = RoundedCornerShape(14.dp),
                         color = Color(0xFF0A0F18),
                         border = BorderStroke(1.dp, MeduskoGold.copy(alpha = 0.65f))
                     ) {
                         Box(modifier = Modifier.fillMaxSize()) {
-                            // Simulated + Live Snapshot Hybrid View
-                            val imageUrlWithBust = "${cam.imageUrl}?t=$refreshNonce"
-                            SubcomposeAsyncImage(
-                                model = imageUrlWithBust,
-                                contentDescription = cam.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                                loading = {
-                                    RoadsideTelemetrySimulatedCanvas(cam, weather, units)
-                                },
-                                error = {
-                                    RoadsideTelemetrySimulatedCanvas(cam, weather, units)
+                            if (playInlineVideo && cam.streamPageUrl.isNotBlank()) {
+                                AndroidView(
+                                    modifier = Modifier.fillMaxSize(),
+                                    factory = { ctx ->
+                                        WebView(ctx).apply {
+                                            settings.javaScriptEnabled = true
+                                            settings.domStorageEnabled = true
+                                            settings.mediaPlaybackRequiresUserGesture = false
+                                            webChromeClient = WebChromeClient()
+                                            webViewClient = WebViewClient()
+                                            loadUrl(cam.streamPageUrl)
+                                        }
+                                    },
+                                    update = { view ->
+                                        if (view.url != cam.streamPageUrl) {
+                                            view.loadUrl(cam.streamPageUrl)
+                                        }
+                                    }
+                                )
+                            } else {
+                                val imageReq = remember(cam.imageUrl, refreshNonce) {
+                                    ImageRequest.Builder(context)
+                                        .data(cam.imageUrl)
+                                        .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 15) Velocast/1.0")
+                                        .memoryCacheKey("${cam.imageUrl}_$refreshNonce")
+                                        .diskCachePolicy(if (refreshNonce > 0) CachePolicy.WRITE_ONLY else CachePolicy.ENABLED)
+                                        .crossfade(true)
+                                        .build()
                                 }
-                            )
+                                SubcomposeAsyncImage(
+                                    model = imageReq,
+                                    contentDescription = cam.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                    loading = {
+                                        RoadsideTelemetrySimulatedCanvas(cam, weather, units)
+                                    },
+                                    error = {
+                                        RoadsideTelemetrySimulatedCanvas(cam, weather, units)
+                                    }
+                                )
+                            }
 
                             // Top Telemetry Overlay Bar
                             Row(
@@ -165,7 +203,7 @@ fun CameraFeedDialog(
                                             .background(TailwindGreen)
                                     )
                                     Text(
-                                        text = "LIVE FEED • ${cam.sourceProvider.badge.uppercase()}",
+                                        text = if (playInlineVideo) "LIVE STREAM PLAYER" else "LIVE CAMERA FEED",
                                         color = Color.White,
                                         fontSize = 10.sp,
                                         fontFamily = FontFamily.Monospace,
@@ -181,37 +219,39 @@ fun CameraFeedDialog(
                             }
 
                             // Bottom Camera Metadata Overlay Bar
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color(0xCC080D16))
-                                    .padding(horizontal = 10.dp, vertical = 7.dp)
-                                    .align(Alignment.BottomCenter)
-                            ) {
-                                Text(
-                                    text = cam.title,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.5.sp
-                                )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                            if (!playInlineVideo) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xCC080D16))
+                                        .padding(horizontal = 10.dp, vertical = 7.dp)
+                                        .align(Alignment.BottomCenter)
                                 ) {
                                     Text(
-                                        text = "${cam.directionLabel} • Elev ${CyclingMath.formatElevation(cam.elevationFeet, units)}",
-                                        color = MeduskoGold,
-                                        fontSize = 10.5.sp,
-                                        fontWeight = FontWeight.SemiBold
+                                        text = cam.title,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.5.sp
                                     )
-                                    Text(
-                                        text = CyclingMath.formatDistance(cam.distanceMiles, units) + " away",
-                                        color = AccentBlue,
-                                        fontSize = 10.5.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "${cam.directionLabel} • Elev ${CyclingMath.formatElevation(cam.elevationFeet, units)}",
+                                            color = MeduskoGold,
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = CyclingMath.formatDistance(cam.distanceMiles, units) + " away",
+                                            color = AccentBlue,
+                                            fontSize = 10.5.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -219,42 +259,72 @@ fun CameraFeedDialog(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Action Row: Refresh Frame & Open Live Web Player
+                    // Action Row: Refresh Frame, Inline Stream Toggle, Open Unique Web Stream URL
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         OutlinedButton(
-                            onClick = { refreshNonce++ },
-                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                playInlineVideo = false
+                                refreshNonce++
+                            },
+                            modifier = Modifier.weight(0.95f),
                             shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(15.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Refresh Frame", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Refresh", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = { playInlineVideo = !playInlineVideo },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                            border = BorderStroke(1.dp, AccentBlue.copy(alpha = 0.6f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayCircleOutline,
+                                contentDescription = null,
+                                tint = AccentBlue,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                if (playInlineVideo) "Show Photo" else "Live Player",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AccentBlue
+                            )
                         }
 
                         Button(
-                            onClick = { uriHandler.openUri(cam.streamPageUrl) },
+                            onClick = {
+                                val targetUrl = cam.streamPageUrl.ifBlank { cam.imageUrl }
+                                uriHandler.openUri(targetUrl)
+                            },
                             modifier = Modifier.weight(1.2f),
                             shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MeduskoGold,
                                 contentColor = Color(0xFF0E131D)
                             )
                         ) {
                             Icon(
-                                imageVector = Icons.Default.OpenInNew,
+                                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(15.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Open Web Stream", fontSize = 12.sp, fontWeight = FontWeight.Black)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Open Direct Stream", fontSize = 11.sp, fontWeight = FontWeight.Black)
                         }
                     }
                 }
@@ -280,7 +350,10 @@ fun CameraFeedDialog(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { selectedCamera = cam },
+                                .clickable {
+                                    selectedCamera = cam
+                                    playInlineVideo = false
+                                },
                             shape = RoundedCornerShape(12.dp),
                             color = if (isSelected) {
                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
@@ -300,17 +373,12 @@ fun CameraFeedDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Text(
-                                            text = cam.title,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
+                                    Text(
+                                        text = cam.title,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
                                     Text(
                                         text = "${cam.locationSubtitle} • ${cam.roadConditionNote}",
                                         fontSize = 11.sp,
@@ -318,10 +386,11 @@ fun CameraFeedDialog(
                                         modifier = Modifier.padding(top = 2.dp)
                                     )
                                     Text(
-                                        text = "Source: ${cam.sourceProvider.title}",
-                                        fontSize = 10.sp,
+                                        text = cam.streamPageUrl,
+                                        fontSize = 9.5.sp,
                                         color = AccentBlue,
-                                        fontWeight = FontWeight.SemiBold,
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 1,
                                         modifier = Modifier.padding(top = 2.dp)
                                     )
                                 }
@@ -354,14 +423,13 @@ fun CameraFeedDialog(
 private fun RoadsideTelemetrySimulatedCanvas(
     cam: PublicCameraFeed,
     weather: WeatherSnapshot?,
-    units: UnitSystem
+    units: UnitPreferences
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
 
-            // Sky gradient
             drawRect(
                 brush = Brush.verticalGradient(
                     colors = listOf(Color(0xFF0E1B33), Color(0xFF1E375A), Color(0xFF2B4560)),
@@ -371,7 +439,6 @@ private fun RoadsideTelemetrySimulatedCanvas(
                 size = size
             )
 
-            // Mountain / Ridge silhouette
             val ridge = Path().apply {
                 moveTo(0f, h * 0.62f)
                 lineTo(w * 0.22f, h * 0.44f)
@@ -384,7 +451,6 @@ private fun RoadsideTelemetrySimulatedCanvas(
             }
             drawPath(ridge, color = Color(0xFF141E2E))
 
-            // Cycling highway perspective trapezoid
             val road = Path().apply {
                 moveTo(w * 0.44f, h * 0.52f)
                 lineTo(w * 0.56f, h * 0.52f)
@@ -394,7 +460,6 @@ private fun RoadsideTelemetrySimulatedCanvas(
             }
             drawPath(road, color = Color(0xFF1D2430))
 
-            // Highway shoulder bike lane lines
             drawLine(
                 color = Color(0xFFE89D24),
                 start = Offset(w * 0.5f, h * 0.54f),
@@ -408,7 +473,6 @@ private fun RoadsideTelemetrySimulatedCanvas(
                 strokeWidth = 2.5f
             )
 
-            // HUD crosshair
             drawCircle(
                 color = Color(0x55E89D24),
                 radius = 34f,
@@ -417,7 +481,6 @@ private fun RoadsideTelemetrySimulatedCanvas(
             )
         }
 
-        // Center Telemetry Badge
         Surface(
             modifier = Modifier.align(Alignment.Center),
             shape = RoundedCornerShape(10.dp),
@@ -432,7 +495,7 @@ private fun RoadsideTelemetrySimulatedCanvas(
                 val windStr = weather?.let { "${CyclingMath.formatSpeed(it.windSpeedMph, units)} ${it.windCardinal}" } ?: "12 mph WNW"
                 val rainStr = weather?.let { "${it.rainChancePercent}% Rain" } ?: "10% Rain"
                 Text(
-                    text = "ROADSIDE SENSOR TELEMETRY",
+                    text = "LOADING LIVE CAMERA SNAPSHOT...",
                     color = MeduskoGold,
                     fontSize = 9.5.sp,
                     fontWeight = FontWeight.Black,

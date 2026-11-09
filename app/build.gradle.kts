@@ -22,8 +22,8 @@ android {
         applicationId = "com.medusko.velocast"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0-Beta"
+        versionCode = 2
+        versionName = "1.0.1-Beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
